@@ -21,7 +21,9 @@
                     desc="" />
                 <filteritem type="filepath" name="android/res/layout/activity_about.xml"
                     desc="" />
-                    <filteritem type="filepath" name="src/libpng/INSTALL"
+                <filteritem type="filepath" name="src/libpng/INSTALL"
+                    desc="" />
+                <filteritem type="filepath" name="android/jni.*"
                     desc="" />
             </filefilter>
             <filefilter name="defaultFilter">
@@ -36,6 +38,8 @@
                 <filteritem type="filepath" name=".*3ds"
                     desc="" />
                 <filteritem type="filepath" name="data/textures/terrain-.*"
+                    desc="" />
+                <filteritem type="filepath" name="android/jni.*"
                     desc="" />
             </filefilter>
         </filefilterlist>
