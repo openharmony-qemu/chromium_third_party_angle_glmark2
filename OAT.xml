@@ -4,16 +4,14 @@
         <licensefile>COPYING</licensefile>
         <policylist>
             <policy name="projectPolicy" desc="">
-                <policyitem type="compatibility" name="GPLStyleLicense" path="android/res/values.*" desc="" />
-                <policyitem type="compatibility" name="GPLStyleLicense" path="android/src/org/linaro/glmark2.*" desc="" />
-                <policyitem type="compatibility" name="GPLStyleLicense" path="src.*" desc="" />
-                <policyitem type="compatibility" name="Libpng" path="src/libpng.*" desc="" />
-                <policyitem type="compatibility" name="GPL-3.0+" path=".*" desc="" />
+                <policyitem type="compatibility" name="GPLStyleLicense" path=".*" desc="" />
+                <policyitem type="compatibility" name="Libpng" path=".*" desc="" />
                 <policyitem type="compatibility" name="zlib-acknowledgement" path=".*" desc="" />
-                <policyitem type="compatibility" name="IJG" path="src/libjpeg-turbo.*" desc="" />
+                <policyitem type="compatibility" name="IJG" path=".*" desc="" />
                 <policyitem type="compatibility" name="Zlib" path=".*" desc="" />
-                <policyitem type="compatibility" name="Khronos License" path="src/glad/include/KHR.*" desc="" />
-                <policyitem type="compatibility" name="X11-Style (Silicon Graphics)" path=".*" desc="" />
+                <policyitem type="compatibility" name="Khronos License" path=".*" desc="" />
+                <policyitem type="compatibility" name="BSD-1-Clause" path=".*" desc="" />
+                <policyitem type="compatibility" name="GPL-3.0+" path=".*" desc="" />
             </policy>
         </policylist>
         <filefilterlist>
@@ -64,9 +62,9 @@
             * For conditions of distribution and use,
             " desc="" />
             </licensematcher>
-            <licensematcher name="X11-Style (Silicon Graphics)" desc="">
+            <licensematcher name="BSD-1-Clause" desc="">
                 <licensetext name="  
-            * THE MATERIAL EMBODIED ON THIS SOFTWARE IS PROVIDED TO YOU &quot;AS-IS&quot;
+            * THE MATERIAL EMBODIED ON THIS SOFTWARE IS PROVIDED TO YOU  &quot;AS-IS &quot;
             * AND WITHOUT WARRANTY OF ANY KIND, EXPRESS, IMPLIED OR OTHERWISE,
             * INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY OR
             * FITNESS FOR A PARTICULAR PURPOSE.  IN NO EVENT SHALL SILICON
@@ -80,12 +78,23 @@
             * POSSESSION, USE OR PERFORMANCE OF THIS SOFTWARE.
             " desc="" />
             </licensematcher>
-            <licensematcher name="BSD-3-Clause" desc="">
+            <licensematcher name="IJG" desc="">
                 <licensetext name="  
-            libjpeg-turbo is covered by three compatible BSD-style open source licenses:
-
             - The IJG (Independent JPEG Group) License, which is listed in
             [README.ijg](README.ijg)
+
+            This license applies to the libjpeg API library and associated programs
+            (any code inherited from libjpeg, and any modifications to that code.)
+
+            - The Modified (3-clause) BSD License, which is listed in
+            [turbojpeg.c](turbojpeg.c)
+
+            This license covers the TurboJPEG API library and associated programs.
+
+            - The zlib License, which is listed in [simd/jsimdext.inc](simd/jsimdext.inc)
+
+            This license is a subset of the other two, and it covers the libjpeg-turbo
+            SIMD extensions.
             " desc="" />
             </licensematcher>
             <licensematcher name="IJG" desc="">
