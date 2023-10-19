@@ -7,23 +7,5 @@
         "Owner": "liujixin@huawei.com",
         "Upstream URL": "https://chromium.googlesource.com/external/github.com/glmark2/glmark2@ca8de51fedb70bace5351c6b002eb952c747e889",
         "Description": "第三方软件angle底层的图形渲染引擎的一部分，包含第三方软件angle glmark2"
-    },
-    {
-        "Name": "angle",
-        "License": "AGPL-3.0-only",
-        "License File": "COPYING",
-        "Version Number": "ca8de51fedb70bace5351c6b002eb952c747e889",
-        "Owner": "liujixin@huawei.com",
-        "Upstream URL": "https://chromium.googlesource.com/external/github.com/glmark2/glmark2@ca8de51fedb70bace5351c6b002eb952c747e889",
-        "Description": "第三方软件angle底层的图形渲染引擎的一部分，包含第三方软件angle glmark2"
-    },
-    {
-        "Name": "angle",
-        "License": "GPL-3.0-or-later",
-        "License File": "COPYING",
-        "Version Number": "ca8de51fedb70bace5351c6b002eb952c747e889",
-        "Owner": "liujixin@huawei.com",
-        "Upstream URL": "https://chromium.googlesource.com/external/github.com/glmark2/glmark2@ca8de51fedb70bace5351c6b002eb952c747e889",
-        "Description": "第三方软件angle底层的图形渲染引擎的一部分，包含第三方软件angle glmark2"
     }
 ]
