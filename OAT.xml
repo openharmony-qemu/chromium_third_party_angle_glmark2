@@ -1,112 +1,131 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Copyright (c) 2021 Huawei Device Co., Ltd.
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+
+    This is the configuration file template for OpenHarmony OSS Audit Tool, please copy it to your
+project root dir and modify it refer to OpenHarmony/tools_oat/README.
+    All configurations in this file will be merged to OAT-Default.xml, if you have any questions or
+concerns, please create issue in OpenHarmony/tools_oat and @jalenchen or chenyaxun.
+
+    licensefile:
+    1.If the project don't have "LICENSE" in root dir, please define all the license files in this
+project in , OAT will check license files according to this rule.
+
+    policylist:
+    1. policy: If the OAT-Default.xml policies do not meet your requirements, please add policies here.
+    2. policyitem: The fields type, name, path, desc is required, and the fields rule, group,
+filefilter is optional,the default value is:
+    <policyitem type="" name="" path="" desc="" rule="may" group="defaultGroup"
+filefilter="defaultPolicyFilter"/>
+    3. policyitem type:
+        "compatibility" is used to check license compatibility in the specified path;
+        "license" is used to check source license header in the specified path;
+        "copyright" is used to check source copyright header in the specified path;
+        "import" is used to check source dependency in the specified path, such as import ... ,include ...
+        "filetype" is used to check file type in the specified path, supported file types: archive, binary
+        "filename" is used to check whether the specified file exists in the specified path(projectroot
+means the root dir of the project), supported file names: LICENSE, README, README.OpenSource
+    4. policyitem name: This field is used for define the license, copyright, "*" means match all, the
+"!" prefix means could not match this value. For example, "!GPL" means can not use GPL license.
+    5. policyitem path: This field is used for define the source file scope to apply this policyitem,
+the "!" prefix means exclude the files. For example, "!.*/lib/.*" means files in lib dir will be
+exclude while process this policyitem.
+    6. policyitem rule and group: These two fields are used together to merge policy results. "may"
+policyitems in the same group means any one in this group passed, the result will be passed.
+    7. policyitem filefilter: Used to bind filefilter which define filter rules.
+    7. policyitem desc: Used to describe the reason of this policy item, committers will check this
+while merging the code.
+    8. filefilter: Filter rules, the type filename is used to filter file name, the type filepath is
+used to filter file path.
+
+    Note:If the text contains special characters, please escape them according to the following rules:
+    " == &quot;
+    & == &amp;
+    ' == &apos;
+    < == &lt;
+    > == &gt;
+-->
+
 <configuration>
     <oatconfig>
-        <licensefile>COPYING</licensefile>
-        <policylist>
+    <licensefile>COPYING</licensefile> 
+         <policylist>
             <policy name="projectPolicy" desc="">
-                <policyitem type="compatibility" name="GPLStyleLicense" path=".*" desc="" />
-                <policyitem type="compatibility" name="Libpng" path=".*" desc="" />
-                <policyitem type="compatibility" name="zlib-acknowledgement" path=".*" desc="" />
-                <policyitem type="compatibility" name="IJG" path=".*" desc="" />
-                <policyitem type="compatibility" name="Zlib" path=".*" desc="" />
-                <policyitem type="compatibility" name="Khronos License" path=".*" desc="" />
-                <policyitem type="compatibility" name="BSD-1-Clause" path=".*" desc="" />
-                <policyitem type="compatibility" name="GPL-3.0+" path=".*" desc="" />
+                <policyitem type="compatibility" name="BSDStyleLicense" path="src/zlib/.*" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="IJG" path="src/libjpeg-turbo/.*" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="Libpng" path="src/libpng/.*" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="Zlib" path="src/zlib/.*" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="Generic Bare Warranty Disclaimer" path="src/glad/include/KHR/khrplatform.h" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="zlib-acknowledgement" path="src/zlib/zlib.h" desc="经法务确认为宽松型许可证" />
+                <policyitem type="compatibility" name="GPLStyleLicense" path="src/.*" desc="经法务确认,涉及文件在render下进行了隔离" />
             </policy>
         </policylist>
         <filefilterlist>
             <filefilter name="defaultPolicyFilter"
                 desc="Filters for compatibility,license header policies">
-                <filteritem type="filepath" name="README.OpenSource"
-                    desc="" />
-                <filteritem type="filepath" name="android/res/layout/activity_about.xml"
-                    desc="" />
+                <filteritem type="filepath" name="src/libjpeg-turbo/.*"
+                    desc="chromuim原生文件无license" />
+                <filteritem type="filepath" name="COPYING.SGI"
+                    desc="chromuim原生文件无license" />
                 <filteritem type="filepath" name="src/libpng/INSTALL"
-                    desc="" />
-                <filteritem type="filepath" name="android/jni.*"
-                    desc="" />
+                    desc="chromuim原生文件无license" />
+                <filteritem type="filepath" name="COPYING"
+                    desc="经确认，该文件不会使用" />
+            </filefilter>
+
+            <filefilter name="defaultFilter">
+                <filteritem type="filepath" name="android/.*" desc="经确认不适用该类文件" />
             </filefilter>
             <filefilter name="defaultFilter">
-                <filteritem type="filepath" name="README.OpenSource"
-                    desc="" />
-                <filteritem type="filepath" name=".*png"
-                    desc="" />
-                <filteritem type="filepath" name=".*3ds"
-                    desc="" />
-                <filteritem type="filepath" name=".*obj"
-                    desc="" />
-                <filteritem type="filepath" name=".*3ds"
-                    desc="" />
-                <filteritem type="filepath" name="data/textures/terrain-.*"
-                    desc="" />
-                <filteritem type="filepath" name="android/jni.*"
-                    desc="" />
+                <filteritem type="filepath" name="README.OpenSource" desc="Filter readme.opensource files" />
+            </filefilter>
+            <filefilter name="binaryFileTypePolicyFilter">
+                <filteritem type="filename" name="*.png"
+                    desc="chromium原生二进制文件，不会使用" />
+                <filteritem type="filename" name="*.3ds"
+                    desc="chromium原生二进制文件，不会使用" />
+                <filteritem type="filename" name="*.obj"
+                    desc="chromium原生二进制文件，不会使用" />
+                <filteritem type="filename" name="*.jpg"
+                    desc="chromium原生二进制文件，不会使用" />
+                <filteritem type="filename" name="*.vert"
+                    desc="chromium原生二进制文件，不会使用" />
             </filefilter>
         </filefilterlist>
         <licensematcherlist>
-            <licensematcher name="Khronos License" desc="">
-                <licensetext name="  
-            ** Permission is hereby granted, free of charge, to any person obtaining a
-            ** copy of this software and/or associated documentation files (the
-            ** &quot;Materials&quot;), to deal in the Materials without restriction, including
-            ** without limitation the rights to use, copy, modify, merge, publish,
-            ** distribute, sublicense, and/or sell copies of the Materials, and to
-            ** permit persons to whom the Materials are furnished to do so, subject to
-            ** the following conditions:
-            " desc="" />
-            </licensematcher>
             <licensematcher name="IJG" desc="">
-                <licensetext name="  
-            * For conditions of distribution and use, see the accompanying README.ijg
-            * file.
-            " desc="" />
+                <licensetext name="
+                * For conditions of distribution and use, see the accompanying README.ijg
+                * file.
+                " desc="" />
             </licensematcher>
             <licensematcher name="Zlib" desc="">
-                <licensetext name="  
-            * For conditions of distribution and use,
-            " desc="" />
+                <licensetext name="
+                * For conditions of distribution and use, see copyright notice in zlib.h
+                " desc="" />
             </licensematcher>
-            <licensematcher name="BSD-1-Clause" desc="">
-                <licensetext name="  
-            * THE MATERIAL EMBODIED ON THIS SOFTWARE IS PROVIDED TO YOU  &quot;AS-IS &quot;
-            * AND WITHOUT WARRANTY OF ANY KIND, EXPRESS, IMPLIED OR OTHERWISE,
-            * INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY OR
-            * FITNESS FOR A PARTICULAR PURPOSE.  IN NO EVENT SHALL SILICON
-            * GRAPHICS, INC.  BE LIABLE TO YOU OR ANYONE ELSE FOR ANY DIRECT,
-            * SPECIAL, INCIDENTAL, INDIRECT OR CONSEQUENTIAL DAMAGES OF ANY
-            * KIND, OR ANY DAMAGES WHATSOEVER, INCLUDING WITHOUT LIMITATION,
-            * LOSS OF PROFIT, LOSS OF USE, SAVINGS OR REVENUE, OR THE CLAIMS OF
-            * THIRD PARTIES, WHETHER OR NOT SILICON GRAPHICS, INC.  HAS BEEN
-            * ADVISED OF THE POSSIBILITY OF SUCH LOSS, HOWEVER CAUSED AND ON
-            * ANY THEORY OF LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE
-            * POSSESSION, USE OR PERFORMANCE OF THIS SOFTWARE.
-            " desc="" />
-            </licensematcher>
-            <licensematcher name="IJG" desc="">
-                <licensetext name="  
-            - The IJG (Independent JPEG Group) License, which is listed in
-            [README.ijg](README.ijg)
-
-            This license applies to the libjpeg API library and associated programs
-            (any code inherited from libjpeg, and any modifications to that code.)
-
-            - The Modified (3-clause) BSD License, which is listed in
-            [turbojpeg.c](turbojpeg.c)
-
-            This license covers the TurboJPEG API library and associated programs.
-
-            - The zlib License, which is listed in [simd/jsimdext.inc](simd/jsimdext.inc)
-
-            This license is a subset of the other two, and it covers the libjpeg-turbo
-            SIMD extensions.
-            " desc="" />
-            </licensematcher>
-            <licensematcher name="IJG" desc="">
-                <licensetext name="  
-            This distribution contains a release of the Independent JPEG Group's free JPEG
-            software.  You are welcome to redistribute this software and to use it for any
-            purpose, subject to the conditions under LEGAL ISSUES, below.
-            " desc="" />
+            <licensematcher name="Generic Bare Warranty Disclaimer" desc="">
+                <licensetext name="
+                ** THE MATERIALS ARE PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND,
+                ** EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+                ** MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+                ** IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+                ** CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+                ** TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+                ** MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+                " desc="" />
             </licensematcher>
         </licensematcherlist>
     </oatconfig>
