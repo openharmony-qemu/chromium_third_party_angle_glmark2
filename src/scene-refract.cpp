@@ -115,38 +115,14 @@ SceneRefract::supported(bool show_errors)
 }
 
 bool
-SceneRefract::load()
-{
-    running_ = false;
-    return true;
-}
-
-void
-SceneRefract::unload()
-{
-}
-
-bool
 SceneRefract::setup()
 {
-    // If the scene isn't supported, don't bother to go through setup.
-    if (!supported(false) || !Scene::setup())
-    {
-        return false;
-    }
-
     priv_ = new RefractPrivate(canvas_);
     if (!priv_->setup(options_)) {
         delete priv_;
         priv_ = 0;
         return false;
     }
-
-    // Set core scene timing after actual initialization so we don't measure
-    // set up time.
-    startTime_ = Util::get_timestamp_us() / 1000000.0;
-    lastUpdateTime_ = startTime_;
-    running_ = true;
 
     return true;
 }
@@ -159,7 +135,6 @@ SceneRefract::teardown()
         priv_->teardown();
         delete priv_;
     }
-    Scene::teardown();
 }
 
 void
@@ -167,7 +142,7 @@ SceneRefract::update()
 {
     Scene::update();
     // Add scene-specific update here
-    priv_->update(lastUpdateTime_ - startTime_);
+    priv_->update(realTime_.elapsed());
 }
 
 void
@@ -405,6 +380,7 @@ RefractPrivate::setup(map<string, Scene::Option>& options)
 void
 RefractPrivate::teardown()
 {
+    glDeleteTextures(1, &texture_);
     depthTarget_.teardown();
     program_.stop();
     program_.release();

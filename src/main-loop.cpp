@@ -23,6 +23,7 @@
 #include "main-loop.h"
 #include "util.h"
 #include "log.h"
+#include "results-file.h"
 
 #include <string>
 #include <sstream>
@@ -112,12 +113,12 @@ MainLoop::step()
      * in draw() may have changed the state.
      */
     if (!scene_->running() || should_quit) {
+        (*bench_iter_)->teardown_scene();
         if (scene_setup_status_ == SceneSetupStatusSuccess) {
             score_ += scene_->average_fps();
             benchmarks_run_++;
         }
         log_scene_result();
-        (*bench_iter_)->teardown_scene();
         scene_ = 0;
         next_benchmark();
     }
@@ -139,30 +140,102 @@ MainLoop::draw()
 void
 MainLoop::log_scene_info()
 {
-    Log::info("%s", scene_->info_string().c_str());
+    std::string info_string = scene_->info_string();
+
+    Log::info("%s:", info_string.c_str());
     Log::flush();
+
+    ResultsFile &results_file = ResultsFile::get();
+    results_file.begin_benchmark();
+    results_file.add_field("name", info_string);
 }
 
 void
 MainLoop::log_scene_result()
 {
     static const std::string format_fps(Log::continuation_prefix +
-                                        " FPS: %u FrameTime: %.3f ms\n");
+                                        " FPS: %s FrameTime: %s ms");
+    static const std::string format_frame(Log::continuation_prefix +
+                                          " FrameTime: %s ms");
+    static const std::string format_cpu(Log::continuation_prefix +
+                                        " (User: %s ms, System: %s ms) CpuBusy: %s%%");
+    static const std::string format_shader(Log::continuation_prefix +
+                                           " ShaderCompTime: %s ms");
     static const std::string format_unsupported(Log::continuation_prefix +
                                                 " Unsupported\n");
     static const std::string format_fail(Log::continuation_prefix +
                                          " Set up failed\n");
+    static const std::string format_done(Log::continuation_prefix + " done");
+    static const std::string format_newline(Log::continuation_prefix + "\n");
+    ResultsFile &results_file = ResultsFile::get();
 
     if (scene_setup_status_ == SceneSetupStatusSuccess) {
-        Log::info(format_fps.c_str(), scene_->average_fps(),
-                                      1000.0 / scene_->average_fps());
+        Scene::Stats stats = scene_->stats();
+
+        if (Options::results & Options::ResultsFps)
+        {
+            std::string fps =
+                Util::toString(static_cast<unsigned>(ceil(1.0 / stats.average_frame_time)));
+            std::string frame_time =
+                Util::toString(1000.0 * stats.average_frame_time, 3);
+
+            Log::info(format_fps.c_str(), fps.c_str(), frame_time.c_str());
+            results_file.add_field("fps", fps);
+            results_file.add_field("frame_time", frame_time);
+        }
+
+        if (Options::results & Options::ResultsCpu)
+        {
+            if (!(Options::results & Options::ResultsFps))
+            {
+                std::string frame_time =
+                    Util::toString(1000.0 * stats.average_frame_time, 3);
+
+                Log::info(format_frame.c_str(), frame_time.c_str());
+                results_file.add_field("frame_time", frame_time);
+            }
+
+            std::string user_time =
+                Util::toString(1000.0 * stats.average_user_time, 3);
+            std::string system_time =
+                Util::toString(1000.0 * stats.average_system_time, 3);
+            std::string cpu_busy =
+                Util::toString(static_cast<int>(100.0 * stats.cpu_busy_percent));
+
+            Log::info(format_cpu.c_str(),
+                      user_time.c_str(), system_time.c_str(), cpu_busy.c_str());
+            results_file.add_field("user_time", user_time);
+            results_file.add_field("system_time", system_time);
+            results_file.add_field("cpu_busy", cpu_busy);
+        }
+
+        if (Options::results & Options::ResultsShader)
+        {
+            std::string shader_time =
+                Util::toString(1000.0 * stats.shader_compilation_time, 3);
+
+            Log::info(format_shader.c_str(), shader_time.c_str());
+            results_file.add_field("shader_comp_time", shader_time);
+        }
+
+        if (Options::results == 0)
+        {
+            Log::info(format_done.c_str());
+        }
+
+        Log::info(format_newline.c_str());
+        results_file.add_field("status", "Success");
     }
     else if (scene_setup_status_ == SceneSetupStatusUnsupported) {
         Log::info(format_unsupported.c_str());
+        results_file.add_field("status", "Unsupported");
     }
     else {
         Log::info(format_fail.c_str());
+        results_file.add_field("status", "Failure");
     }
+
+    results_file.end_benchmark();
 }
 
 void
@@ -313,6 +386,7 @@ void
 MainLoopValidation::log_scene_result()
 {
     static const std::string format(Log::continuation_prefix + " Validation: %s\n");
+    ResultsFile &results_file = ResultsFile::get();
     std::string result;
 
     switch(scene_->validate()) {
@@ -330,4 +404,7 @@ MainLoopValidation::log_scene_result()
     }
 
     Log::info(format.c_str(), result.c_str());
+    results_file.add_field("status", result);
+
+    results_file.end_benchmark();
 }

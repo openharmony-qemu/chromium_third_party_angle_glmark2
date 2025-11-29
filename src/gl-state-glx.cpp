@@ -30,6 +30,11 @@
  * Public methods *
  ******************/
 
+GLStateGLX::~GLStateGLX()
+{
+    reset();
+}
+
 bool
 GLStateGLX::init_display(void* native_display, GLVisualConfig& visual_config)
 {
@@ -103,7 +108,7 @@ GLStateGLX::valid()
     if (!init_gl_extensions())
         return false;
 
-    unsigned int desired_swap(0);
+    unsigned int desired_swap(Options::swap_mode == Options::SwapModeFIFO ? 1 : 0);
     unsigned int actual_swap(-1);
     if (glXSwapIntervalEXT) {
         glXSwapIntervalEXT(xdpy_, xwin_, desired_swap);
@@ -130,6 +135,8 @@ GLStateGLX::reset()
 {
     if (glx_context_)
     {
+        if (glx_context_ == glXGetCurrentContext())
+            glXMakeCurrent(xdpy_, 0, 0);
         glXDestroyContext(xdpy_, glx_context_);
         glx_context_ = 0;
     }
@@ -220,13 +227,6 @@ GLStateGLX::ensure_glx_fbconfig()
         GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
         GLX_RENDER_TYPE, GLX_RGBA_BIT,
         GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
-        GLX_RED_SIZE, requested_visual_config_.red,
-        GLX_GREEN_SIZE, requested_visual_config_.green,
-        GLX_BLUE_SIZE, requested_visual_config_.blue,
-        GLX_ALPHA_SIZE, requested_visual_config_.alpha,
-        GLX_DEPTH_SIZE, requested_visual_config_.depth,
-        GLX_STENCIL_SIZE, requested_visual_config_.stencil,
-        GLX_BUFFER_SIZE, requested_visual_config_.buffer,
         GLX_DOUBLEBUFFER, True,
         None
     };
@@ -251,11 +251,15 @@ GLStateGLX::ensure_glx_fbconfig()
 
     /* Select the best matching config */
     glx_fbconfig_ = select_best_config(configs);
+    if (!glx_fbconfig_) {
+        Log::error("Failed to find suitable GLX FB config\n");
+        return false;
+    }
 
     XFree(fbc);
 
     if (Options::show_debug) {
-        int buf, red, green, blue, alpha, depth, stencil, id, native_id;
+        int buf, red, green, blue, alpha, depth, stencil, id, native_id, samples;
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_FBCONFIG_ID, &id);
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_VISUAL_ID, &native_id);
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_BUFFER_SIZE, &buf);
@@ -265,6 +269,7 @@ GLStateGLX::ensure_glx_fbconfig()
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_ALPHA_SIZE, &alpha);
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_DEPTH_SIZE, &depth);
         glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_STENCIL_SIZE, &stencil);
+        glXGetFBConfigAttrib(xdpy_, glx_fbconfig_, GLX_SAMPLES, &samples);
         Log::debug("GLX chosen config ID: 0x%x Native Visual ID: 0x%x\n"
                    "  Buffer: %d bits\n"
                    "     Red: %d bits\n"
@@ -272,9 +277,10 @@ GLStateGLX::ensure_glx_fbconfig()
                    "    Blue: %d bits\n"
                    "   Alpha: %d bits\n"
                    "   Depth: %d bits\n"
-                   " Stencil: %d bits\n",
+                   " Stencil: %d bits\n"
+                   " Samples: %d\n",
                    id, native_id,
-                   buf, red, green, blue, alpha, depth, stencil);
+                   buf, red, green, blue, alpha, depth, stencil, samples);
     }
 
 
@@ -304,6 +310,7 @@ GLStateGLX::ensure_glx_context()
 void
 GLStateGLX::get_glvisualconfig_glx(const GLXFBConfig config, GLVisualConfig &visual_config)
 {
+    glXGetFBConfigAttrib(xdpy_, config, GLX_FBCONFIG_ID, &visual_config.id);
     glXGetFBConfigAttrib(xdpy_, config, GLX_BUFFER_SIZE, &visual_config.buffer);
     glXGetFBConfigAttrib(xdpy_, config, GLX_RED_SIZE, &visual_config.red);
     glXGetFBConfigAttrib(xdpy_, config, GLX_GREEN_SIZE, &visual_config.green);
@@ -311,6 +318,7 @@ GLStateGLX::get_glvisualconfig_glx(const GLXFBConfig config, GLVisualConfig &vis
     glXGetFBConfigAttrib(xdpy_, config, GLX_ALPHA_SIZE, &visual_config.alpha);
     glXGetFBConfigAttrib(xdpy_, config, GLX_DEPTH_SIZE, &visual_config.depth);
     glXGetFBConfigAttrib(xdpy_, config, GLX_STENCIL_SIZE, &visual_config.stencil);
+    glXGetFBConfigAttrib(xdpy_, config, GLX_SAMPLES, &visual_config.samples);
 }
 
 GLXFBConfig
@@ -339,6 +347,14 @@ GLStateGLX::select_best_config(std::vector<GLXFBConfig> configs)
             best_score = score;
             best_config = config;
         }
+    }
+
+    if (best_score <= 0) {
+        if (Options::good_config)
+            return NULL;
+        Log::warning("Unable to find a good GLX FB config, will continue with the best match,\n"
+                     "but you should verify that the config values are acceptable.\n"
+                     "Tip: Use --visual-config to request a different config\n");
     }
 
     return best_config;

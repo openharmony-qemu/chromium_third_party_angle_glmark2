@@ -33,6 +33,8 @@ using std::stringstream;
 using std::string;
 using std::map;
 
+double Scene::shaderCompilationTime_ = 0.0;
+
 Scene::Option::Option(const std::string &nam, const std::string &val, const std::string &desc,
                       const std::string &values) :
 name(nam), value(val), default_value(val), description(desc), set(false)
@@ -42,8 +44,7 @@ name(nam), value(val), default_value(val), description(desc), set(false)
 
 Scene::Scene(Canvas &pCanvas, const string &name) :
     canvas_(pCanvas), name_(name),
-    startTime_(0), lastUpdateTime_(0), currentFrame_(0),
-    running_(0), duration_(0), nframes_(0)
+    currentFrame_(0), running_(0), duration_(0), nframes_(0)
 {
     options_["duration"] = Scene::Option("duration", "10.0",
                                          "The duration of each benchmark in seconds");
@@ -97,25 +98,7 @@ Scene::unload()
 bool
 Scene::setup()
 {
-    duration_ = Util::fromString<double>(options_["duration"].value);
-    nframes_ = Util::fromString<unsigned>(options_["nframes"].value);
-
-    ShaderSource::default_precision(
-            ShaderSource::Precision(options_["vertex-precision"].value),
-            ShaderSource::ShaderTypeVertex
-            );
-
-    ShaderSource::default_precision(
-            ShaderSource::Precision(options_["fragment-precision"].value),
-            ShaderSource::ShaderTypeFragment
-            );
-
-    currentFrame_ = 0;
-    running_ = false;
-    startTime_ = Util::get_timestamp_us() / 1000000.0;
-    lastUpdateTime_ = startTime_;
-
-    return supported(true);
+    return true;
 }
 
 void
@@ -126,14 +109,11 @@ Scene::teardown()
 void
 Scene::update()
 {
-    double current_time = Util::get_timestamp_us() / 1000000.0;
-    double elapsed_time = current_time - startTime_;
+    realTime_.lastUpdate = Util::get_timestamp_us() / 1000000.0;
 
     currentFrame_++;
 
-    lastUpdateTime_ = current_time;
-
-    if (elapsed_time >= duration_)
+    if (realTime_.elapsed() >= duration_)
         running_ = false;
 
     if (nframes_ > 0 && currentFrame_ >= nframes_)
@@ -158,8 +138,26 @@ Scene::info_string(const string &title)
 unsigned
 Scene::average_fps()
 {
-    double elapsed_time = lastUpdateTime_ - startTime_;
-    return currentFrame_ / elapsed_time;
+    return currentFrame_ / realTime_.elapsed();
+}
+
+Scene::Stats
+Scene::stats()
+{
+    Stats stats;
+    int nproc = Util::get_num_processors();
+
+    stats.average_frame_time = realTime_.elapsed() / currentFrame_;
+    stats.average_user_time = userTime_.elapsed() / currentFrame_;
+    stats.average_system_time = systemTime_.elapsed() / currentFrame_;
+    if (idleTime_.lastUpdate == 0.0)
+        stats.cpu_busy_percent = 0.0;
+    else
+        stats.cpu_busy_percent = 1.0 - idleTime_.elapsed() /
+                                       (nproc * realTime_.elapsed());
+    stats.shader_compilation_time = shaderCompilationTime_;
+
+    return stats;
 }
 
 bool
@@ -219,11 +217,58 @@ Scene::set_option_default(const string &opt, const string &val)
     return true;
 }
 
+bool
+Scene::prepare()
+{
+    duration_ = Util::fromString<double>(options_["duration"].value);
+    nframes_ = Util::fromString<unsigned>(options_["nframes"].value);
+
+    ShaderSource::default_precision(
+            ShaderSource::Precision(options_["vertex-precision"].value),
+            ShaderSource::ShaderTypeVertex
+            );
+
+    ShaderSource::default_precision(
+            ShaderSource::Precision(options_["fragment-precision"].value),
+            ShaderSource::ShaderTypeFragment
+            );
+
+    currentFrame_ = 0;
+    running_ = false;
+    realTime_.start = realTime_.lastUpdate = 0;
+    userTime_.start = userTime_.lastUpdate = 0;
+    systemTime_.start = systemTime_.lastUpdate = 0;
+    shaderCompilationTime_ = 0.0;
+
+    if (!supported(true))
+        return false;
+
+    if (!load() || !setup())
+        return false;
+
+    running_ = true;
+    update_elapsed_times();
+    realTime_.start = realTime_.lastUpdate;
+    userTime_.start = userTime_.lastUpdate;
+    systemTime_.start = systemTime_.lastUpdate;
+    idleTime_.start = idleTime_.lastUpdate;
+
+    return true;
+}
+
+void
+Scene::finish()
+{
+    update_elapsed_times();
+    teardown();
+    unload();
+}
 
 string
 Scene::construct_title(const string &title)
 {
     stringstream ss;
+    bool first_option = true;
 
     if (title == "") {
         for (map<string, Option>::iterator iter = options_.begin();
@@ -232,12 +277,16 @@ Scene::construct_title(const string &title)
         {
             if (Options::show_all_options || iter->second.set)
             {
-                ss << iter->first << "=" << iter->second.value << ":";
+                if (first_option)
+                    first_option = false;
+                else
+                    ss << ":";
+                ss << iter->first << "=" << iter->second.value;
             }
         }
 
         if (ss.str().empty())
-            ss << "<default>:";
+            ss << "<default>";
     }
     else
         ss << title;
@@ -253,6 +302,8 @@ Scene::load_shaders_from_strings(Program &program,
                                  const std::string &vtx_shader_filename,
                                  const std::string &frg_shader_filename)
 {
+    double shaderStartTime = Util::get_timestamp_us() / 1000000.0;
+
     program.init();
 
     Log::debug("Loading vertex shader from file %s:\n%s",
@@ -289,5 +340,15 @@ Scene::load_shaders_from_strings(Program &program,
         return false;
     }
 
+    shaderCompilationTime_ += Util::get_timestamp_us() / 1000000.0 - shaderStartTime;
+
     return true;
+}
+
+void
+Scene::update_elapsed_times()
+{
+    realTime_.lastUpdate = Util::get_timestamp_us() / 1000000.0;
+    Util::get_process_times(&userTime_.lastUpdate, &systemTime_.lastUpdate);
+    idleTime_.lastUpdate = Util::get_idle_time();
 }

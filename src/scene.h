@@ -64,6 +64,14 @@ public:
         bool set;
     };
 
+    struct Stats {
+        double average_frame_time;
+        double average_user_time;
+        double average_system_time;
+        double cpu_busy_percent;
+        double shader_compilation_time;
+    };
+
     /**
      * The result of a validation check.
      */
@@ -81,44 +89,6 @@ public:
      * @return whether the scene is supported
      */
     virtual bool supported(bool show_errors);
-
-    /**
-     * Performs option-independent resource loading and configuration.
-     *
-     * It should be safe to call ::load() (and the corresponding ::unload())
-     * only once per program execution, although you may choose to do so more
-     * times to better manage resource consumption.
-     *
-     * @return whether loading succeeded
-     */
-    virtual bool load();
-
-    /**
-     * Performs option-independent resource unloading.
-     */
-    virtual void unload();
-
-    /**
-     * Performs option-dependent resource loading and configuration.
-     *
-     * This method also prepares a scene for a benchmark run.
-     * It should be called just before running a scene/benchmark.
-     *
-     * The base Scene::setup() method also checks whether a scene
-     * configuration is supported by calling ::supported(true).
-     *
-     * @return whether setting the scene up succeeded
-     */
-    virtual bool setup();
-
-    /**
-     * Performs option-dependent resource unloading.
-     *
-     * This method should be called just after running a scene/benchmark.
-     *
-     * @return the operation status
-     */
-    virtual void teardown();
 
     /**
      * Updates the scene state.
@@ -178,6 +148,13 @@ public:
     unsigned average_fps();
 
     /**
+     * Gets the statistics for this scene.
+     *
+     * @return the statistics
+     */
+    Stats stats();
+
+    /**
      * Gets the name of the scene.
      * @return the name of the scene
      */
@@ -199,6 +176,16 @@ public:
      * @return the scene options
      */
     const std::map<std::string, Option> &options() { return options_; }
+
+    /**
+     * Prepare for a benchmarking run.
+     */
+    bool prepare();
+
+    /**
+     * Finish a benchmarking run.
+     */
+    void finish();
 
     /**
      * Gets a dummy scene object reference.
@@ -226,11 +213,63 @@ protected:
     Scene(Canvas &pCanvas, const std::string &name);
     std::string construct_title(const std::string &title);
 
+    /**
+     * Performs option-independent resource loading and configuration.
+     *
+     * It should be safe to call ::load() (and the corresponding ::unload())
+     * only once per program execution, although you may choose to do so more
+     * times to better manage resource consumption.
+     *
+     * @return whether loading succeeded
+     */
+    virtual bool load();
+
+    /**
+     * Performs option-independent resource unloading.
+     */
+    virtual void unload();
+
+    /**
+     * Performs option-dependent resource loading and configuration.
+     *
+     * This method also prepares a scene for a benchmark run.
+     * It should be called just before running a scene/benchmark.
+     *
+     * The base Scene::setup() method also checks whether a scene
+     * configuration is supported by calling ::supported(true).
+     *
+     * @return whether setting the scene up succeeded
+     */
+    virtual bool setup();
+
+    /**
+     * Performs option-dependent resource unloading.
+     *
+     * This method should be called just after running a scene/benchmark.
+     *
+     * @return the operation status
+     */
+    virtual void teardown();
+
+    /**
+     * Updates the elapsed times for this benchmark run.
+     */
+    void update_elapsed_times();
+
+    struct ElapsedTime {
+        double start = 0.0;
+        double lastUpdate = 0.0;
+        double elapsed() { return lastUpdate - start; }
+    };
+
+    static double shaderCompilationTime_;
     Canvas &canvas_;
     std::string name_;
     std::map<std::string, Option> options_;
-    double startTime_;
-    double lastUpdateTime_;
+    ElapsedTime realTime_;
+    ElapsedTime userTime_;
+    ElapsedTime systemTime_;
+    ElapsedTime idleTime_;
     unsigned currentFrame_;
     bool running_;
     double duration_;      // Duration of run in seconds
@@ -245,6 +284,8 @@ class SceneDefaultOptions : public Scene
 public:
     SceneDefaultOptions(Canvas &pCanvas) : Scene(pCanvas, "") {}
     bool set_option(const std::string &opt, const std::string &val);
+
+protected:
     bool setup();
 
 private:
@@ -255,10 +296,6 @@ class SceneBuild : public Scene
 {
 public:
     SceneBuild(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -266,6 +303,11 @@ public:
     ~SceneBuild();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     Program program_;
     LibMatrix::mat4 perspective_;
     LibMatrix::vec3 centerVec_;
@@ -283,10 +325,6 @@ class SceneTexture : public Scene
 {
 public:
     SceneTexture(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -294,6 +332,11 @@ public:
     ~SceneTexture();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     Program program_;
     Mesh mesh_;
     GLuint texture_;
@@ -311,10 +354,6 @@ class SceneShading : public Scene
 {
 public:
     SceneShading(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -322,6 +361,11 @@ public:
     ~SceneShading();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     Program program_;
     float radius_;
     bool orientModel_;
@@ -338,17 +382,18 @@ class SceneGrid : public Scene
 {
 public:
     SceneGrid(Canvas &pCanvas, const std::string &name);
-    virtual bool load();
-    virtual void unload();
-    virtual bool setup();
-    virtual void teardown();
-    virtual void update();
-    virtual void draw();
+    void update();
+    void draw();
     virtual ValidationResult validate();
 
     ~SceneGrid();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     Program program_;
     Mesh mesh_;
     float rotation_;
@@ -359,40 +404,42 @@ class SceneConditionals : public SceneGrid
 {
 public:
     SceneConditionals(Canvas &pCanvas);
-    bool setup();
     ValidationResult validate();
 
     ~SceneConditionals();
+
+protected:
+    bool setup();
 };
 
 class SceneFunction : public SceneGrid
 {
 public:
     SceneFunction(Canvas &pCanvas);
-    bool setup();
     ValidationResult validate();
 
     ~SceneFunction();
+
+protected:
+    bool setup();
 };
 
 class SceneLoop : public SceneGrid
 {
 public:
     SceneLoop(Canvas &pCanvas);
-    bool setup();
     ValidationResult validate();
 
     ~SceneLoop();
+
+protected:
+    bool setup();
 };
 
 class SceneBump : public Scene
 {
 public:
     SceneBump(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -400,6 +447,11 @@ public:
     ~SceneBump();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     Program program_;
     Mesh mesh_;
     GLuint texture_;
@@ -416,10 +468,6 @@ class SceneEffect2D : public Scene
 {
 public:
     SceneEffect2D(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -427,8 +475,12 @@ public:
     ~SceneEffect2D();
 
 protected:
-    Program program_;
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
 
+    Program program_;
     Mesh mesh_;
     GLuint texture_;
 };
@@ -437,10 +489,6 @@ class ScenePulsar : public Scene
 {
 public:
     ScenePulsar(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -448,6 +496,11 @@ public:
     ~ScenePulsar();
 
 protected:
+    bool load();
+    void unload();
+    bool setup();
+    void teardown();
+
     int numQuads_;
     Program program_;
     Mesh mesh_;
@@ -467,15 +520,15 @@ class SceneDesktop : public Scene
 public:
     SceneDesktop(Canvas &canvas);
     bool supported(bool show_errors);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
 
     ~SceneDesktop();
+
+protected:
+    bool setup();
+    void teardown();
 
 private:
     SceneDesktopPrivate *priv_;
@@ -488,10 +541,6 @@ class SceneBuffer : public Scene
 public:
     SceneBuffer(Canvas &canvas);
     bool supported(bool show_errors);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
@@ -499,6 +548,8 @@ public:
     ~SceneBuffer();
 
 private:
+    bool setup();
+    void teardown();
     SceneBufferPrivate *priv_;
 };
 
@@ -508,15 +559,15 @@ class SceneIdeas : public Scene
 {
 public:
     SceneIdeas(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
 
     ~SceneIdeas();
+
+protected:
+    bool setup();
+    void teardown();
 
 private:
     SceneIdeasPrivate* priv_;
@@ -529,15 +580,15 @@ class SceneTerrain : public Scene
 public:
     SceneTerrain(Canvas &pCanvas);
     bool supported(bool show_errors);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
 
     ~SceneTerrain();
+
+protected:
+    bool setup();
+    void teardown();
 
 private:
     SceneTerrainPrivate* priv_;
@@ -550,13 +601,13 @@ class SceneJellyfish : public Scene
 public:
     SceneJellyfish(Canvas &pCanvas);
     ~SceneJellyfish();
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
+
+protected:
+    bool setup();
+    void teardown();
 };
 
 class ShadowPrivate;
@@ -566,13 +617,13 @@ class SceneShadow : public Scene
 public:
     SceneShadow(Canvas& canvas);
     bool supported(bool show_errors);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
+
+protected:
+    bool setup();
+    void teardown();
 };
 
 class RefractPrivate;
@@ -582,26 +633,19 @@ class SceneRefract : public Scene
 public:
     SceneRefract(Canvas& canvas);
     bool supported(bool show_errors);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
     void update();
     void draw();
     ValidationResult validate();
+
+protected:
+    bool setup();
+    void teardown();
 };
 
 class SceneClear : public Scene
 {
 public:
     SceneClear(Canvas &pCanvas);
-    bool load();
-    void unload();
-    bool setup();
-    void teardown();
-    void update();
-    void draw();
-    ValidationResult validate();
 };
 
 #endif

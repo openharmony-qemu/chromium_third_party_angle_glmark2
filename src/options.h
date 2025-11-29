@@ -25,16 +25,35 @@
 #define OPTIONS_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 #include "gl-visual-config.h"
 
 struct Options {
+    struct WindowSystemOption {
+        std::string name;
+        std::string value;
+    };
+
     enum FrameEnd {
         FrameEndDefault,
         FrameEndNone,
         FrameEndSwap,
         FrameEndFinish,
         FrameEndReadPixels
+    };
+
+    enum SwapMode {
+        SwapModeDefault,
+        SwapModeImmediate,
+        SwapModeMailbox,
+        SwapModeFIFO,
+    };
+
+    enum Results {
+        ResultsFps = 1,
+        ResultsCpu = 2,
+        ResultsShader = 4,
     };
 
     static bool parse_args(int argc, char **argv);
@@ -45,16 +64,23 @@ struct Options {
     static bool validate;
     static std::string data_path;
     static FrameEnd frame_end;
+    static SwapMode swap_mode;
     static std::pair<int,int> size;
     static bool list_scenes;
     static bool show_all_options;
     static bool show_debug;
+    static bool show_version;
     static bool show_help;
     static bool reuse_context;
     static bool run_forever;
     static bool annotate;
     static bool offscreen;
     static GLVisualConfig visual_config;
+    static bool good_config;
+    static Results results;
+    static std::string results_file;
+    static std::vector<WindowSystemOption> winsys_options;
+    static std::string winsys_options_help;
 };
 
 #endif /* OPTIONS_H_ */

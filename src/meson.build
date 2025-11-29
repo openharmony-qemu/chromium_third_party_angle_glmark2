@@ -14,6 +14,7 @@ common_sources = [
     'mesh.cpp',
     'model.cpp',
     'options.cpp',
+    'results-file.cpp',
     'scene-buffer.cpp',
     'scene-build.cpp',
     'scene-bump.cpp',
@@ -70,11 +71,34 @@ libmatrix_headers_dep = declare_dependency(
 common_deps = [
     m_dep,
     dl_dep,
+    thread_dep,
     libjpeg_dep,
     libpng_dep,
     libmatrix_headers_dep,
 ]
-    
+
+# The include/ directory contains some POSIX functionality missing from msvc.
+if cpp.get_id() == 'msvc'
+    common_deps += declare_dependency(
+        include_directories: include_directories('include'),
+        )
+endif    
+
+if need_dispmanx
+    native_dispmanx_lib = static_library(
+        'native-dispmanx',
+        'native-state-dispmanx.cpp',
+        dependencies: [bcm_host_dep, libmatrix_headers_dep],
+        )
+
+    native_dispmanx_dep = declare_dependency(
+        link_with: native_dispmanx_lib,
+        compile_args: ['-DGLMARK2_USE_DISPMANX'],
+        )
+else
+    native_dispmanx_dep = declare_dependency()
+endif
+
 if need_drm
     native_drm_lib = static_library(
         'native-drm',
@@ -88,6 +112,21 @@ if need_drm
         )
 else
     native_drm_dep = declare_dependency()
+endif
+
+if need_gbm
+    native_gbm_lib = static_library(
+        'native-gbm',
+        'native-state-gbm.cpp',
+        dependencies: [gbm_dep, gbm_dep, libmatrix_headers_dep],
+        )
+    native_gbm_dep = declare_dependency(
+        link_with: native_gbm_lib,
+        dependencies: gbm_dep,
+        compile_args: ['-DGLMARK2_USE_GBM', '-D__GBM__'],
+        )
+else
+    native_gbm_dep = declare_dependency()
 endif
 
 if need_wayland
@@ -123,6 +162,21 @@ if need_wayland
         )
 else
     native_wayland_dep = declare_dependency()
+endif
+
+if need_win32
+    native_win32_lib = static_library(
+        'native-win32',
+        'native-state-win32.cpp',
+        dependencies: libmatrix_headers_dep,
+        )
+
+    native_win32_dep = declare_dependency(
+        link_with: native_win32_lib,
+        compile_args: ['-DGLMARK2_USE_WIN32'],
+        )
+else
+    native_win32_dep = declare_dependency()
 endif
 
 if need_x11
@@ -223,6 +277,7 @@ if need_glx
     # and parity with gl-state-egl.
     wsi_glx_dep = declare_dependency(
         sources: ['gl-state-glx.cpp', 'glad/src/glx.c'],
+        dependencies: x11_dep,
         include_directories: [
             include_directories('glad/include'),
             include_directories('libmatrix'),
@@ -233,13 +288,33 @@ else
     wsi_glx_dep = declare_dependency()
 endif
 
+if need_wgl
+    wsi_wgl_dep = declare_dependency(
+        sources: ['gl-state-wgl.cpp', 'glad/src/wgl.c'],
+        include_directories: [
+            include_directories('glad/include'),
+            include_directories('libmatrix'),
+            ],
+        compile_args: ['-DGLMARK2_USE_WGL'],
+        dependencies: opengl32_dep
+        )
+else
+    wsi_wgl_dep = declare_dependency()
+endif
+
 # Flavor info : [ binary, native, gl, wsi ]
 flavor_info = {
+  'dispmanx-glesv2' : ['glmark2-es2-dispmanx', native_dispmanx_dep, gl_glesv2_dep, wsi_egl_dep],
   'drm-gl' : ['glmark2-drm', native_drm_dep, gl_gl_dep, wsi_egl_dep],
   'drm-glesv2' : ['glmark2-es2-drm', native_drm_dep, gl_glesv2_dep, wsi_egl_dep],
+  'gbm-gl' : ['glmark2-gbm', native_gbm_dep, gl_gl_dep, wsi_egl_dep],
+  'gbm-glesv2' : ['glmark2-es2-gbm', native_gbm_dep, gl_glesv2_dep, wsi_egl_dep],
   'wayland-gl' : ['glmark2-wayland', native_wayland_dep, gl_gl_dep, wsi_egl_dep],
   'wayland-glesv2' : ['glmark2-es2-wayland', native_wayland_dep, gl_glesv2_dep, wsi_egl_dep],
+  'win32-gl' : ['glmark2-win32', native_win32_dep, gl_gl_dep, wsi_wgl_dep],
+  'win32-glesv2' : ['glmark2-es2-win32', native_win32_dep, gl_glesv2_dep, wsi_egl_dep],
   'x11-gl' : ['glmark2', native_x11_dep, gl_gl_dep, wsi_glx_dep],
+  'x11-gl-egl' : ['glmark2-egl', native_x11_dep, gl_gl_dep, wsi_egl_dep],
   'x11-glesv2' : ['glmark2-es2', native_x11_dep, gl_glesv2_dep, wsi_egl_dep],
 }
 
@@ -258,6 +333,7 @@ foreach flavor : flavors
         binary,
         ['main.cpp', 'canvas-generic.cpp'],
         dependencies: [common_dep, native_dep, gl_dep, wsi_dep],
+        cpp_args: ['-DGLMARK2_EXECUTABLE="@0@"'.format(binary)],
         install: true,
     )
 endforeach

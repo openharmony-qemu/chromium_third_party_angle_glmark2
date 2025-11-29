@@ -31,6 +31,7 @@
 #include "main-loop.h"
 #include "benchmark-collection.h"
 #include "scene-collection.h"
+#include "results-file.h"
 
 #include "canvas-generic.h"
 
@@ -38,8 +39,8 @@
 #include "native-state-x11.h"
 #elif GLMARK2_USE_DRM
 #include "native-state-drm.h"
-#elif GLMARK2_USE_MIR
-#include "native-state-mir.h"
+#elif GLMARK2_USE_GBM
+#include "native-state-gbm.h"
 #elif GLMARK2_USE_WAYLAND
 #include "native-state-wayland.h"
 #elif GLMARK2_USE_DISPMANX
@@ -141,17 +142,54 @@ do_validation(Canvas &canvas)
     while (loop.step());
 }
 
+std::string get_full_command_line(int argc, char *argv[])
+{
+    std::stringstream ss;
+
+    for (int i = 0; i < argc; i++)
+    {
+        if (i > 0) ss << " ";
+        ss << argv[i];
+    }
+
+    return ss.str();
+}
+
 int
 main(int argc, char *argv[])
 {
+#if GLMARK2_USE_X11
+    NativeStateX11 native_state;
+#elif GLMARK2_USE_DRM
+    NativeStateDRM native_state;
+#elif GLMARK2_USE_GBM
+    NativeStateGBM native_state;
+#elif GLMARK2_USE_WAYLAND
+    NativeStateWayland native_state;
+#elif GLMARK2_USE_DISPMANX
+    NativeStateDispmanx native_state;
+#elif GLMARK2_USE_WIN32
+    NativeStateWin32 native_state;
+#endif
+
     if (!Options::parse_args(argc, argv))
         return 1;
 
     /* Initialize Log class */
-    Log::init(Util::appname_from_path(argv[0]), Options::show_debug);
+    Log::init(std::filesystem::path(argv[0]).stem().string(), Options::show_debug);
+
+    if (!ResultsFile::init(Options::results_file)) {
+        Log::error("%s: Could not initialize results file\n", __FUNCTION__);
+        return 1;
+    }
 
     if (Options::show_help) {
         Options::print_help();
+        return 0;
+    }
+
+    if (Options::show_version) {
+        printf("%s\n", GLMARK_VERSION);
         return 0;
     }
 
@@ -165,20 +203,6 @@ main(int argc, char *argv[])
     }
 
     // Create the canvas
-#if GLMARK2_USE_X11
-    NativeStateX11 native_state;
-#elif GLMARK2_USE_DRM
-    NativeStateDRM native_state;
-#elif GLMARK2_USE_MIR
-    NativeStateMir native_state;
-#elif GLMARK2_USE_WAYLAND
-    NativeStateWayland native_state;
-#elif GLMARK2_USE_DISPMANX
-    NativeStateDispmanx native_state;
-#elif GLMARK2_USE_WIN32
-    NativeStateWin32 native_state;
-#endif
-
 #if GLMARK2_USE_EGL
     GLStateEGL gl_state;
 #elif GLMARK2_USE_GLX
@@ -207,11 +231,21 @@ main(int argc, char *argv[])
         return 1;
     }
 
+    ResultsFile &results_file = ResultsFile::get();
+
+    results_file.begin();
+    results_file.begin_info();
+    results_file.add_field("cmdline", get_full_command_line(argc, argv));
+    results_file.add_field("executable", GLMARK2_EXECUTABLE);
+    results_file.add_field("version", GLMARK_VERSION);
+
     Log::info("=======================================================\n");
     Log::info("    glmark2 %s\n", GLMARK_VERSION);
     Log::info("=======================================================\n");
     canvas.print_info();
     Log::info("=======================================================\n");
+
+    results_file.end_info();
 
     canvas.visible(true);
 
@@ -219,6 +253,8 @@ main(int argc, char *argv[])
         do_validation(canvas);
     else
         do_benchmark(canvas);
+
+    results_file.end();
 
     return 0;
 }

@@ -296,6 +296,8 @@ EglConfig::print() const
 
 GLStateEGL::~GLStateEGL()
 {
+    reset();
+
     if(egl_display_ != nullptr){
         if(!eglTerminate(egl_display_))
             Log::error("eglTerminate failed\n");
@@ -311,7 +313,11 @@ GLStateEGL::init_display(void* native_display, GLVisualConfig& visual_config)
 #if defined(WIN32)
     if (!egl_lib_.open("libEGL.dll")) {
 #else
-    if (!egl_lib_.open_from_alternatives({"libEGL.so", "libEGL.so.1" })) {
+    if (!egl_lib_.open_from_alternatives({
+#if GLMARK2_USE_DISPMANX
+            "libbrcmEGL.so",
+#endif
+            "libEGL.so", "libEGL.so.1" })) {
 #endif
         Log::error("Error loading EGL library\n");
         return false;
@@ -336,7 +342,7 @@ GLStateEGL::init_gl_extensions()
 {
 #if GLMARK2_USE_GLESv2
     if (!gladLoadGLES2UserPtr(load_proc, this)) {
-        Log::error("Loading GLESv2 entry points failed.");
+        Log::error("Loading GLESv2 entry points failed.\n");
         return false;
     }
 
@@ -358,7 +364,7 @@ GLStateEGL::init_gl_extensions()
     GLExtensions::GenerateMipmap = glGenerateMipmap;
 #elif GLMARK2_USE_GL
     if (!gladLoadGLUserPtr(load_proc, this)) {
-        Log::error("Loading GL entry points failed.");
+        Log::error("Loading GL entry points failed.\n");
         return false;
     }
     GLExtensions::MapBuffer = glMapBuffer;
@@ -396,7 +402,7 @@ GLStateEGL::valid()
     if (!gotValidContext())
         return false;
 
-    if (egl_context_ == eglGetCurrentContext())
+    if (eglGetCurrentContext && egl_context_ == eglGetCurrentContext())
         return true;
 
     if (!eglMakeCurrent(egl_display_, egl_surface_, egl_surface_, egl_context_)) {
@@ -404,7 +410,8 @@ GLStateEGL::valid()
         return false;
     }
 
-    if (!eglSwapInterval(egl_display_, 0)) {
+    if (Options::swap_mode != Options::SwapModeFIFO &&
+        (!eglSwapInterval || !eglSwapInterval(egl_display_, 0))) {
         Log::info("** Failed to set swap interval. Results may be bounded above by refresh rate.\n");
     }
 
@@ -424,6 +431,10 @@ GLStateEGL::reset()
 
     if (!egl_context_) {
         return true;
+    }
+
+    if (eglGetCurrentContext && egl_context_ == eglGetCurrentContext()) {
+        eglMakeCurrent(egl_display_, 0, 0, 0);
     }
 
     if (EGL_FALSE == eglDestroyContext(egl_display_, egl_context_)) {
@@ -478,8 +489,6 @@ GLStateEGL::getVisualConfig(GLVisualConfig& vc)
 #define GLMARK2_NATIVE_EGL_DISPLAY_ENUM EGL_PLATFORM_WAYLAND_KHR
 #elif  GLMARK2_USE_DRM
 #define GLMARK2_NATIVE_EGL_DISPLAY_ENUM EGL_PLATFORM_GBM_KHR
-#elif  GLMARK2_USE_MIR
-#define GLMARK2_NATIVE_EGL_DISPLAY_ENUM EGL_PLATFORM_MIR_KHR
 #else
 // Platforms not in the above platform enums fall back to eglGetDisplay.
 #define GLMARK2_NATIVE_EGL_DISPLAY_ENUM 0
@@ -569,14 +578,24 @@ GLStateEGL::gotValidDisplay()
 #if defined(WIN32)
     std::initializer_list<const char *> libNames = { "libGLESv2.dll" };
 #else
-    std::initializer_list<const char *> libNames = { "libGLESv2.so", "libGLESv2.so.2" };
+    std::initializer_list<const char *> libNames = {
+#if GLMARK2_USE_DISPMANX
+        "libbrcmGLESv2.so",
+#endif
+        "libGLESv2.so", "libGLESv2.so.2" };
 #endif
 #elif GLMARK2_USE_GL
     EGLenum apiType(EGL_OPENGL_API);
     std::initializer_list<const char *> libNames = { "libGL.so", "libGL.so.1" };
+    if (!GLAD_EGL_VERSION_1_4) {
+        Log::error("EGL version %d.%d does not support the OpenGL API\n",
+                   egl_major, egl_minor);
+        return false;
+    }
 #endif
-    if (!eglBindAPI(apiType)) {
-        Log::error("Failed to bind api EGL_OPENGL_ES_API\n");
+
+    if (eglBindAPI && !eglBindAPI(apiType)) {
+        Log::error("Failed to bind api\n");
         return false;
     }
 
@@ -591,6 +610,7 @@ GLStateEGL::gotValidDisplay()
 void
 GLStateEGL::get_glvisualconfig(EGLConfig config, GLVisualConfig& visual_config)
 {
+    eglGetConfigAttrib(egl_display_, config, EGL_CONFIG_ID, &visual_config.id);
     eglGetConfigAttrib(egl_display_, config, EGL_BUFFER_SIZE, &visual_config.buffer);
     eglGetConfigAttrib(egl_display_, config, EGL_RED_SIZE, &visual_config.red);
     eglGetConfigAttrib(egl_display_, config, EGL_GREEN_SIZE, &visual_config.green);
@@ -598,6 +618,7 @@ GLStateEGL::get_glvisualconfig(EGLConfig config, GLVisualConfig& visual_config)
     eglGetConfigAttrib(egl_display_, config, EGL_ALPHA_SIZE, &visual_config.alpha);
     eglGetConfigAttrib(egl_display_, config, EGL_DEPTH_SIZE, &visual_config.depth);
     eglGetConfigAttrib(egl_display_, config, EGL_STENCIL_SIZE, &visual_config.stencil);
+    eglGetConfigAttrib(egl_display_, config, EGL_SAMPLES, &visual_config.samples);
 }
 
 EGLConfig
@@ -628,6 +649,14 @@ GLStateEGL::select_best_config(std::vector<EGLConfig>& configs)
         }
     }
 
+    if (best_score <= 0) {
+        if (Options::good_config)
+            return NULL;
+        Log::warning("Unable to find a good EGL config, will continue with the best match,\n"
+                     "but you should verify that the config values are acceptable.\n"
+                     "Tip: Use --visual-config to request a different config\n");
+    }
+
     return best_config;
 }
 
@@ -641,12 +670,6 @@ GLStateEGL::gotValidConfig()
         return false;
 
     const EGLint config_attribs[] = {
-        EGL_RED_SIZE, requested_visual_config_.red,
-        EGL_GREEN_SIZE, requested_visual_config_.green,
-        EGL_BLUE_SIZE, requested_visual_config_.blue,
-        EGL_ALPHA_SIZE, requested_visual_config_.alpha,
-        EGL_DEPTH_SIZE, requested_visual_config_.depth,
-        EGL_STENCIL_SIZE, requested_visual_config_.stencil,
 #if GLMARK2_USE_GLESv2
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
 #elif GLMARK2_USE_GL
@@ -680,6 +703,10 @@ GLStateEGL::gotValidConfig()
 
     // Select the best matching config
     egl_config_ = select_best_config(configs);
+    if (!egl_config_) {
+        Log::error("Failed to find suitable EGL config\n");
+        return false;
+    }
 
     vector<EglConfig> configVec;
     for (vector<EGLConfig>::const_iterator configIt = configs.begin();

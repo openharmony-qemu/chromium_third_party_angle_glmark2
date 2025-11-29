@@ -31,9 +31,7 @@ class GLVisualConfig
 {
 public:
     GLVisualConfig():
-        red(1), green(1), blue(1), alpha(1), depth(1), stencil(0), buffer(1) {}
-    GLVisualConfig(int r, int g, int b, int a, int d, int s, int buf):
-        red(r), green(g), blue(b), alpha(a), depth(d), stencil(s), buffer(buf) {}
+        id(0), red(1), green(1), blue(1), alpha(1), depth(1), stencil(-1), buffer(1), samples(0) {}
     GLVisualConfig(const std::string &s);
 
     /**
@@ -50,6 +48,7 @@ public:
      */
     int match_score(const GLVisualConfig &target) const;
 
+    int id;
     int red;
     int green;
     int blue;
@@ -57,6 +56,7 @@ public:
     int depth;
     int stencil;
     int buffer;
+    int samples;
 
 private:
     int score_component(int component, int target, int scale) const;

@@ -24,7 +24,9 @@
  */
 #include "native-state-drm.h"
 #include "log.h"
+#include "options.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <libudev.h>
 #include <cstring>
@@ -33,6 +35,45 @@
 /******************
  * Public methods *
  ******************/
+
+namespace
+{
+
+std::string const drm_device_opt{"drm-device"};
+
+std::string get_drm_device_option()
+{
+    std::string drm_device{""};
+
+    for (auto const& opt : Options::winsys_options)
+    {
+        if (opt.name == drm_device_opt)
+            drm_device = opt.value;
+    }
+
+    return drm_device;
+}
+
+}
+
+NativeStateDRM::NativeStateDRM() :
+    fd_(0),
+    resources_(0),
+    connector_(0),
+    encoder_(0),
+    crtc_(0),
+    mode_(0),
+    dev_(0),
+    surface_(0),
+    pending_bo_(0),
+    flipped_bo_(0),
+    presented_bo_(0),
+    crtc_set_(false),
+    use_async_flip_(false)
+{
+    Options::winsys_options_help =
+       "  drm-device=DRM-DEVICE  The DRM device to use (autodetected if unspecified)\n";
+}
 
 bool
 NativeStateDRM::init_display()
@@ -50,10 +91,19 @@ NativeStateDRM::display()
 }
 
 bool
-NativeStateDRM::create_window(WindowProperties const& /*properties*/)
+NativeStateDRM::create_window(WindowProperties const& properties)
 {
     if (!dev_) {
         Log::error("Error: DRM device has not been initialized!\n");
+        return false;
+    }
+
+    /* egl config's native visual id is drm fourcc */
+    surface_ = gbm_surface_create(dev_, mode_->hdisplay, mode_->vdisplay,
+                                  properties.visual_id,
+                                  GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+    if (!surface_) {
+        Log::error("Failed to create GBM surface\n");
         return false;
     }
 
@@ -83,57 +133,80 @@ NativeStateDRM::should_quit()
 void
 NativeStateDRM::flip()
 {
-    gbm_bo* next = gbm_surface_lock_front_buffer(surface_);
-    fb_ = fb_get_from_bo(next);
-    unsigned int waiting(1);
-
-    if (!crtc_set_) {
-        int status = drmModeSetCrtc(fd_, encoder_->crtc_id, fb_->fb_id, 0, 0,
-                                    &connector_->connector_id, 1, mode_);
-        if (status >= 0) {
-            crtc_set_ = true;
-            bo_ = next;
-        }
-        else {
-            Log::error("Failed to set crtc: %d\n", status);
-        }
+    if (!crtc_set_ && drmSetMaster(fd_) < 0) {
+        Log::error("Failed to become DRM master "
+                   "(hint: glmark2-drm needs to be run in a VT)\n");
+        should_quit_ = true;
         return;
     }
 
-    int status = drmModePageFlip(fd_, encoder_->crtc_id, fb_->fb_id,
-                                 DRM_MODE_PAGE_FLIP_EVENT, &waiting);
-    if (status < 0) {
-        Log::error("Failed to enqueue page flip: %d\n", status);
+    if (pending_bo_)
+        gbm_surface_release_buffer(surface_, pending_bo_);
+    pending_bo_ = gbm_surface_lock_front_buffer(surface_);
+
+    DRMFBState* pending_fb = fb_get_from_bo(pending_bo_);
+
+    if (!pending_bo_ || !pending_fb) {
+        Log::error("Failed to get gbm front buffer\n");
         return;
     }
 
-    fd_set fds;
-    FD_ZERO(&fds);
-    FD_SET(fd_, &fds);
-    drmEventContext evCtx;
-    memset(&evCtx, 0, sizeof(evCtx));
-    evCtx.version = 2;
-    evCtx.page_flip_handler = page_flip_handler;
+    if (Options::swap_mode == Options::SwapModeFIFO || use_async_flip_)
+    {
+        /* When using either FIFO mode (vsync) or an async flip, wait for the
+         * current flip to finish. */
+        while (flipped_bo_ && check_for_page_flip(-1) >= 0)
+            continue;
+    }
+    else
+    {
+        /* When not using async flips, i.e., mailbox-like presentation,
+         * and the flip is still not done, we can continue potentially
+         * without flipping. */
+        check_for_page_flip(0);
+    }
 
-    while (waiting) {
-        status = select(fd_ + 1, &fds, 0, 0, 0);
-        if (status < 0) {
-            // Most of the time, select() will return an error because the
-            // user pressed Ctrl-C.  So, only print out a message in debug
-            // mode, and just check for the likely condition and release
-            // the current buffer object before getting out.
-            Log::debug("Error in select\n");
-            if (should_quit()) {
-                gbm_surface_release_buffer(surface_, bo_);
-                bo_ = next;
+    /* If a flip is not in progress we can schedule another one. */
+    if (!flipped_bo_) {
+        if (!crtc_set_) {
+            int status = drmModeSetCrtc(fd_, encoder_->crtc_id, pending_fb->fb_id, 0, 0,
+                                        &connector_->connector_id, 1, mode_);
+            if (status >= 0) {
+                crtc_set_ = true;
+                if (presented_bo_)
+                    gbm_surface_release_buffer(surface_, presented_bo_);
+                presented_bo_ = pending_bo_;
+                flipped_bo_ = nullptr;
+                pending_bo_ = nullptr;
+            }
+            else {
+                Log::error("Failed to set crtc: %d\n", status);
             }
             return;
         }
-        drmHandleEvent(fd_, &evCtx);
+
+        uint32_t flip_flags = DRM_MODE_PAGE_FLIP_EVENT;
+        if (use_async_flip_)
+            flip_flags |= DRM_MODE_PAGE_FLIP_ASYNC;
+
+        int status = drmModePageFlip(fd_, encoder_->crtc_id, pending_fb->fb_id,
+                                     flip_flags, this);
+        if (status < 0) {
+            Log::error("Failed to enqueue page flip: %d\n", status);
+            return;
+        }
+
+        flipped_bo_ = pending_bo_;
+        pending_bo_ = nullptr;
     }
 
-    gbm_surface_release_buffer(surface_, bo_);
-    bo_ = next;
+    /* We need to ensure our surface has a free buffer, otherwise GL will
+     * have no buffer to render on. */
+    while (!gbm_surface_has_free_buffers(surface_) &&
+           check_for_page_flip(-1) >= 0)
+    {
+        continue;
+    }
 }
 
 /*******************
@@ -418,6 +491,10 @@ NativeStateDRM::fb_destroy_callback(gbm_bo* bo, void* data)
 NativeStateDRM::DRMFBState*
 NativeStateDRM::fb_get_from_bo(gbm_bo* bo)
 {
+    if (!bo) {
+        return NULL;
+    }
+
     DRMFBState* fb = reinterpret_cast<DRMFBState*>(gbm_bo_get_user_data(bo));
     if (fb) {
         return fb;
@@ -425,10 +502,25 @@ NativeStateDRM::fb_get_from_bo(gbm_bo* bo)
 
     unsigned int width = gbm_bo_get_width(bo);
     unsigned int height = gbm_bo_get_height(bo);
-    unsigned int stride = gbm_bo_get_stride(bo);
-    unsigned int handle = gbm_bo_get_handle(bo).u32;
+    unsigned int handles[4] = { 0, }, strides[4] = { 0, }, offsets[4] = { 0, };
+    unsigned int format = gbm_bo_get_format(bo);
     unsigned int fb_id(0);
-    int status = drmModeAddFB(fd_, width, height, 24, 32, stride, handle, &fb_id);
+    int status;
+
+#ifdef GBM_HAS_PLANES
+    int i;
+    for (i = 0; i < gbm_bo_get_plane_count(bo); i++) {
+        handles[i] = gbm_bo_get_handle_for_plane(bo, i).u32;
+        strides[i] = gbm_bo_get_stride_for_plane(bo, i);
+        offsets[i] = gbm_bo_get_offset(bo, i);
+    }
+#else
+    handles[0] = gbm_bo_get_handle(bo).u32;
+    strides[0] = gbm_bo_get_stride(bo);
+#endif
+
+    status = drmModeAddFB2(fd_, width, height, format, handles,
+                           strides, offsets, &fb_id, 0);
     if (status < 0) {
         Log::error("Failed to create FB: %d\n", status);
         return 0;
@@ -452,24 +544,29 @@ NativeStateDRM::init_gbm()
         return false;
     }
 
-    surface_ = gbm_surface_create(dev_, mode_->hdisplay, mode_->vdisplay,
-                                  GBM_FORMAT_XRGB8888,
-                                  GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-    if (!surface_) {
-        Log::error("Failed to create GBM surface\n");
-        return false;
-    }
-
     return true;
 }
 
 bool
 NativeStateDRM::init()
 {
-    // TODO: The user should be able to define *exactly* which device
-    //       node to open and the program should try to open only
-    //       this node, in order to take care of unknown use cases.
-    int fd = open_using_udev_scan();
+    int fd = -1;
+    std::string drm_device = get_drm_device_option();
+
+    if (valid_drm_node_path(drm_device)) {
+        Log::debug("Trying to use DRM node %s from --winsys-options\n",
+                   drm_device.c_str());
+        fd = open(drm_device.c_str(), O_RDWR);
+        if (!valid_fd(fd)) {
+            Log::error("Tried to use '%s' but failed.\nReason : %s\n",
+                       drm_device.c_str(), strerror(errno));
+            return false;
+        }
+    }
+
+    if (!valid_fd(fd)) {
+        fd = open_using_udev_scan();
+    }
 
     if (!valid_fd(fd)) {
         fd = open_using_module_checking();
@@ -575,6 +672,19 @@ NativeStateDRM::init()
         }
     }
 
+    uint64_t cap_async;
+    if (Options::swap_mode == Options::SwapModeDefault ||
+        Options::swap_mode == Options::SwapModeImmediate) {
+        use_async_flip_ = drmGetCap(fd_, DRM_CAP_ASYNC_PAGE_FLIP, &cap_async) == 0 &&
+                          cap_async == 1;
+        if (!use_async_flip_) {
+            Log::info("Warning: DRM_CAP_ASYNC_PAGE_FLIP not supported, falling"
+                      " back to 'mailbox' mode for SwapInterval(0).\n");
+        }
+    } else {
+        use_async_flip_ = false;
+    }
+
     signal(SIGINT, &NativeStateDRM::quit_handler);
 
     return true;
@@ -591,8 +701,11 @@ NativeStateDRM::quit_handler(int /*signo*/)
 void
 NativeStateDRM::page_flip_handler(int/*  fd */, unsigned int /* frame */, unsigned int /* sec */, unsigned int /* usec */, void* data)
 {
-    unsigned int* waiting = reinterpret_cast<unsigned int*>(data);
-    *waiting = 0;
+    NativeStateDRM* state = reinterpret_cast<NativeStateDRM*>(data);
+    if (state->presented_bo_)
+        gbm_surface_release_buffer(state->surface_, state->presented_bo_);
+    state->presented_bo_ = state->flipped_bo_;
+    state->flipped_bo_ = nullptr;
 }
 
 void
@@ -634,4 +747,25 @@ NativeStateDRM::cleanup()
     }
     fd_ = 0;
     mode_ = 0;
+}
+
+int
+NativeStateDRM::check_for_page_flip(int timeout_ms)
+{
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd_, &fds);
+
+    drmEventContext evCtx;
+    memset(&evCtx, 0, sizeof(evCtx));
+    evCtx.version = 2;
+    evCtx.page_flip_handler = page_flip_handler;
+
+    struct timeval timeout = {0, timeout_ms * 1000};
+    int status = select(fd_ + 1, &fds, 0, 0,
+                        timeout_ms < 0 ? nullptr : &timeout);
+    if (status == 1)
+        drmHandleEvent(fd_, &evCtx);
+
+    return status;
 }
