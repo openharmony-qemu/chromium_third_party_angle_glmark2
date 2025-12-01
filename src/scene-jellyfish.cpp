@@ -44,33 +44,12 @@ SceneJellyfish::~SceneJellyfish()
 }
 
 bool
-SceneJellyfish::load()
-{
-    running_ = false;
-    return true;
-}
-
-void
-SceneJellyfish::unload()
-{
-}
-
-bool
 SceneJellyfish::setup()
 {
-    if (!Scene::setup())
-        return false;
-
     // Set up our private object that does all of the lifting
     priv_ = new JellyfishPrivate();
     if (!priv_->initialize())
         return false;
-
-    // Set core scene timing after actual initialization so we don't measure
-    // set up time.
-    startTime_ = Util::get_timestamp_us() / 1000000.0;
-    lastUpdateTime_ = startTime_;
-    running_ = true;
 
     return true;
 }
@@ -79,7 +58,8 @@ void
 SceneJellyfish::teardown()
 {
     priv_->cleanup();
-    Scene::teardown();
+    delete priv_;
+    priv_ = 0;
 }
 
 void
@@ -416,6 +396,9 @@ JellyfishPrivate::initialize()
 
     ShaderSource vtx_source(vtx_shader_filename);
     ShaderSource frg_source(frg_shader_filename);
+
+    // Use high float precision, if available, in the jellyfish fragment shader
+    frg_source.precision(std::string(",high,,"));
 
     if (!Scene::load_shaders_from_strings(program_, vtx_source.str(),
         frg_source.str()))

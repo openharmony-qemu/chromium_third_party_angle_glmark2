@@ -1,5 +1,5 @@
 /*
- * Copyright © 2013 Canonical Ltd
+ * Copyright © 2022 Erico Nunes
  *
  * This file is part of the glmark2 OpenGL (ES) 2.0 benchmark.
  *
@@ -15,22 +15,21 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * glmark2.  If not, see <http://www.gnu.org/licenses/>.
- *
- * Authors:
- *  Alexandros Frantzis
  */
-#ifndef GLMARK2_NATIVE_STATE_MIR_H_
-#define GLMARK2_NATIVE_STATE_MIR_H_
+
+#ifndef GLMARK2_NATIVE_STATE_GBM_H_
+#define GLMARK2_NATIVE_STATE_GBM_H_
 
 #include "native-state.h"
-#include <mir_toolkit/mir_client_library.h>
 #include <csignal>
+#include <cstring>
+#include <gbm.h>
 
-class NativeStateMir : public NativeState
+class NativeStateGBM : public NativeState
 {
 public:
-    NativeStateMir() : mir_connection_(0), mir_surface_(0), properties_() {}
-    ~NativeStateMir();
+    NativeStateGBM();
+    ~NativeStateGBM() { cleanup(); }
 
     bool init_display();
     void* display();
@@ -38,15 +37,20 @@ public:
     void* window(WindowProperties& properties);
     void visible(bool v);
     bool should_quit();
-    void flip() { }
+    void flip();
 
 private:
     static void quit_handler(int signum);
     static volatile std::sig_atomic_t should_quit_;
 
-    MirConnection* mir_connection_;
-    MirSurface* mir_surface_;
-    WindowProperties properties_;
+    void cleanup();
+
+    int width;
+    int height;
+
+    int fd_;
+    gbm_device* dev_;
+    gbm_surface* surface_;
 };
 
-#endif /* GLMARK2_NATIVE_STATE_MIR_H_ */
+#endif /* GLMARK2_NATIVE_STATE_GBM_H_ */

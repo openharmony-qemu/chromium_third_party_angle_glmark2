@@ -26,7 +26,7 @@
 #include <vector>
 
 GLVisualConfig::GLVisualConfig(const std::string &s) :
-    red(1), green(1), blue(1), alpha(1), depth(1), stencil(0), buffer(1)
+    GLVisualConfig()
 {
     std::vector<std::string> elems;
 
@@ -54,6 +54,10 @@ GLVisualConfig::GLVisualConfig(const std::string &s) :
                 stencil = Util::fromString<int>(opt[1]);
             else if (opt[0] == "buf" || opt[0] == "buffer")
                 buffer = Util::fromString<int>(opt[1]);
+            else if (opt[0] == "ms" || opt[0] == "samples")
+                samples = Util::fromString<int>(opt[1]);
+            else if (opt[0] == "id" )
+                id = Util::fromString<int>(opt[1]);
         }
         else
             Log::info("Warning: ignoring invalid option string '%s' "
@@ -67,6 +71,11 @@ GLVisualConfig::match_score(const GLVisualConfig &target) const
 {
     int score(0);
 
+    /* A target config id trumps all other considerations and must match
+     * exactly. */
+    if (target.id)
+        return target.id == id ? 1000 : -1000;
+
     /* 
      * R,G,B,A integer values are at most 8 bits wide (for current widespread
      * hardware), so we need to scale them by 4 to get them in the [0,32] range.
@@ -76,8 +85,9 @@ GLVisualConfig::match_score(const GLVisualConfig &target) const
     score += score_component(blue, target.blue, 4);
     score += score_component(alpha, target.alpha, 4);
     score += score_component(depth, target.depth, 1);
-    score += score_component(stencil, target.stencil, 0);
+    score += score_component(stencil, target.stencil, 1);
     score += score_component(buffer, target.buffer, 1);
+    score += score_component(samples, target.samples, -1);
 
     return score;
 }
@@ -123,8 +133,23 @@ GLVisualConfig::score_component(int component, int target, int scale) const
          * than requested component values. Because the ranges of component
          * values vary we use a scaling factor to even them out, so that the
          * score for all components ranges from [0,MAXIMUM_COMPONENT_SCORE).
+         * If scale > 0, we reward the largest positive difference from target,
+         * otherwise the smallest positive difference from target.
+         * We also reward the smallest positive difference from the target,
+         * if the target < 0, i.e., we don't care about this value.
          */
-        score = scale * (component - target);
+        int diff = std::abs(scale) * (component - target);
+        if (diff > 0)
+        {
+            score = (scale < 0 || target < 0) ?
+                    MAXIMUM_COMPONENT_SCORE - diff : diff;
+            score = std::min(MAXIMUM_COMPONENT_SCORE, score);
+            score = std::max(0, score);
+        }
+        else
+        {
+            score = 0;
+        }
     }
 
     return score;

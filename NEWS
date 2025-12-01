@@ -1,3 +1,26 @@
+glmark2 2023.01 (20230119)
+==========================
+
+* Add gbm-gl/glesv2 flavors for GBM offscreen rendering.
+* Add x11-gl-egl flavor that uses EGL under X11.
+* Implement SwapInterval 0 for the DRM backend.
+* Support multisampled configs in --visual-config.
+* Support explicitly specifying the config id in --visual-config.
+* Add CPU time and shader compilation time to available results.
+* Add --results to specify which kind of results to report.
+* Add --results-file to export results to XML or CSV.
+* Add --version command-line option.
+
+glmark2 2021.12 (20211223)
+==========================
+
+* Fix crash with NVIDIA OpenGL driver.
+* Fix issues when running with the Wayland backend under Sway.
+* Gracefully handle missing GL features.
+* Fix model loading on big-endian systems.
+* Support EGL versions < 1.4.
+* Fix crash with the DRM backend when we can't become DRM master.
+
 glmark2 2021.02 (20210215)
 ==========================
 

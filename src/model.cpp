@@ -29,6 +29,7 @@
 #include "util.h"
 #include "float.h"
 #include "math.h"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <memory>
@@ -39,12 +40,27 @@ using LibMatrix::vec2;
 using LibMatrix::vec3;
 using LibMatrix::uvec3;
 
-#define read_or_fail(file, dst, size) do { \
-    file.read(reinterpret_cast<char *>((dst)), (size)); \
-    if (file.gcount() < (std::streamsize)(size)) { \
+static inline void read_from_file(std::istream& file, void *dst, size_t nmemb, size_t size) {
+    file.read(reinterpret_cast<char *>(dst), nmemb * size);
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    char *p = reinterpret_cast<char *>(dst);
+    for (size_t i = 0; i < nmemb; ++i) {
+        if (size == 2) {
+            std::swap(p[size*i], p[size*i+1]);
+        } else if (size == 4) {
+            std::swap(p[size*i], p[size*i+3]);
+            std::swap(p[size*i+1], p[size*i+2]);
+        }
+    }
+#endif
+}
+
+#define read_or_fail(file, dst, nmemb, size) do { \
+    read_from_file((file), (dst), (nmemb), (size)); \
+    if (file.gcount() < (std::streamsize)((nmemb)*(size))) { \
         Log::error("%s: %d: Failed to read %zd bytes from 3ds file (read %zd)\n", \
                    __FUNCTION__, __LINE__, \
-                   (size_t)(size), file.gcount()); \
+                   (size_t)((nmemb)*(size)), file.gcount()); \
         return false; \
     } \
 } while(0);
@@ -355,7 +371,7 @@ Model::calculate_normals()
  * @return whether loading succeeded
  */
 bool
-Model::load_3ds(const std::string &filename)
+Model::load_3ds(const std::filesystem::path &filename)
 {
     Object *object(0);
 
@@ -375,7 +391,7 @@ Model::load_3ds(const std::string &filename)
         uint32_t chunk_length;
 
         // Read the chunk header
-        input_file.read(reinterpret_cast<char *>(&chunk_id), 2);
+        read_from_file(input_file, &chunk_id, 1, 2);
         if (input_file.gcount() == 0) {
             continue;
         }
@@ -386,7 +402,7 @@ Model::load_3ds(const std::string &filename)
         }
 
         //Read the length of the chunk
-        read_or_fail(input_file, &chunk_length, 4);
+        read_or_fail(input_file, &chunk_length, 1, 4);
 
         switch (chunk_id)
         {
@@ -417,7 +433,7 @@ Model::load_3ds(const std::string &filename)
                 unsigned char c = 1;
 
                 for (int i = 0; i < 20 && c != '\0'; i++) {
-                    read_or_fail(input_file, &c, 1);
+                    read_or_fail(input_file, &c, 1, 1);
                     ss << c;
                 }
 
@@ -444,12 +460,12 @@ Model::load_3ds(const std::string &filename)
             case 0x4110:
                 {
                 uint16_t qty;
-                read_or_fail(input_file, &qty, sizeof(uint16_t));
+                read_or_fail(input_file, &qty, 1, sizeof(uint16_t));
                 object->vertices.resize(qty);
 
                 for (uint16_t i = 0; i < qty; i++) {
                     float f[3];
-                    read_or_fail(input_file, f, sizeof(float) * 3);
+                    read_or_fail(input_file, f, 3, sizeof(float));
                     vec3& vertex = object->vertices[i].v;
                     vertex.x(f[0]);
                     vertex.y(f[1]);
@@ -468,11 +484,11 @@ Model::load_3ds(const std::string &filename)
             case 0x4120:
                 {
                 uint16_t qty;
-                read_or_fail(input_file, &qty, sizeof(uint16_t));
+                read_or_fail(input_file, &qty, 1, sizeof(uint16_t));
                 object->faces.resize(qty);
                 for (uint16_t i = 0; i < qty; i++) {
                     uint16_t f[4];
-                    read_or_fail(input_file, f, sizeof(uint16_t) * 4);
+                    read_or_fail(input_file, f, 4, sizeof(uint16_t));
                     uvec3& face = object->faces[i].v;
                     face.x(f[0]);
                     face.y(f[1]);
@@ -491,10 +507,10 @@ Model::load_3ds(const std::string &filename)
             case 0x4140:
                 {
                 uint16_t qty;
-                read_or_fail(input_file, &qty, sizeof(uint16_t));
+                read_or_fail(input_file, &qty, 1, sizeof(uint16_t));
                 for (uint16_t i = 0; i < qty; i++) {
                     float f[2];
-                    read_or_fail(input_file, f, sizeof(float) * 2);
+                    read_or_fail(input_file, f, 2, sizeof(float));
                     vec2& texcoord = object->vertices[i].t;
                     texcoord.x(f[0]);
                     texcoord.y(f[1]);
@@ -677,7 +693,7 @@ Model::obj_get_face(const string& source, Face& f)
  * @return whether loading succeeded
  */
 bool
-Model::load_obj(const std::string &filename)
+Model::load_obj(const std::filesystem::path &filename)
 {
     Log::debug("Loading model from obj file '%s'\n", filename.c_str());
 
@@ -813,7 +829,7 @@ Model::find_models()
     {
         return ModelPrivate::modelMap;
     }
-    vector<string> pathVec;
+    vector<std::filesystem::path> pathVec;
     string dataDir(Options::data_path + "/models");
     Util::list_files(dataDir, pathVec);
 #ifdef GLMARK_EXTRAS_PATH
@@ -824,41 +840,19 @@ Model::find_models()
     // Now that we have a list of all of the model files available to us,
     // let's go through and pull out the names and what format they're in
     // so the scene can decide which ones to use.
-    for(vector<string>::const_iterator pathIt = pathVec.begin();
-        pathIt != pathVec.end();
-        pathIt++)
+    for(const auto &curPath : pathVec)
     {
-        const string& curPath = *pathIt;
-        string::size_type namePos(0);
-        string::size_type slashPos = curPath.rfind("/");
-        if (slashPos != string::npos)
-        {
-            // Advance to the first character after the last slash
-            namePos = slashPos + 1;
-        }
+        auto ext = curPath.extension();
+        auto name = curPath.stem().string();
 
         ModelFormat format(MODEL_INVALID);
-        string::size_type extPos = curPath.rfind(".3ds");
-        if (extPos == string::npos)
-        {
-            // It's not a 3ds model
-            extPos = curPath.rfind(".obj");
-            if (extPos == string::npos)
-            {
-                // It's not an obj model either, so skip it.
-                continue;
-            }
-            format = MODEL_OBJ;
-        }
-        else
-        {
-            // It's a 3ds model
+        if (ext == ".3ds")
             format = MODEL_3DS;
-        }
+        else if (ext == ".obj")
+            format = MODEL_OBJ;
 
-        string name(curPath, namePos, extPos - namePos);
-        ModelDescriptor* desc = new ModelDescriptor(name, format, curPath);
-        ModelPrivate::modelMap.insert(std::make_pair(name, desc));
+        std::unique_ptr<ModelDescriptor> desc(new ModelDescriptor(name, format, curPath));
+        ModelPrivate::modelMap.insert(std::make_pair(name, std::move(desc)));
     }
 
     return ModelPrivate::modelMap;
@@ -884,7 +878,7 @@ Model::load(const string& modelName)
         return retVal;
     }
 
-    ModelDescriptor* desc = modelIt->second;
+    ModelDescriptor* desc = modelIt->second.get();
     switch (desc->format())
     {
         case MODEL_INVALID:

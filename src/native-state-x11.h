@@ -29,7 +29,7 @@
 class NativeStateX11 : public NativeState
 {
 public:
-    NativeStateX11() : xdpy_(0), xwin_(0), properties_() {}
+    NativeStateX11();
     ~NativeStateX11();
 
     bool init_display();
@@ -46,6 +46,8 @@ private:
     /** The X window associated with this canvas. */
     Window xwin_;
     WindowProperties properties_;
+    /** The X WM_DELETE message. */
+    Atom wm_delete_window_;
 };
 
 #endif /* GLMARK2_NATIVE_STATE_X11_H_ */
